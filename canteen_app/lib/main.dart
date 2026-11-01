@@ -6,11 +6,17 @@ import 'providers/menu_provider.dart';
 import 'providers/cart_provider.dart';
 import 'providers/order_provider.dart';
 import 'providers/notification_provider.dart';
+import 'providers/wallet_provider.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/reset_password_screen.dart';
 import 'screens/staff/staff_dashboard_screen.dart';
 import 'screens/student/student_home_screen.dart';
 import 'services/local_notifier.dart';
 import 'utils/constants.dart';
+
+/// Lets [AuthGate] clear stale auth routes (signup / forgot-password) when
+/// the password-recovery deep link takes over as the home screen.
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,10 +46,12 @@ class CanteenApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CartProvider()),
         ChangeNotifierProvider(create: (_) => OrderProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
+        ChangeNotifierProvider(create: (_) => WalletProvider()),
       ],
       child: MaterialApp(
         title: AppStrings.appName,
         debugShowCheckedModeBanner: false,
+        navigatorKey: rootNavigatorKey,
         scaffoldMessengerKey: LocalNotifier.scaffoldMessengerKey,
         theme: ThemeData(
           useMaterial3: true,
@@ -107,8 +115,17 @@ class AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, auth, _) {
+        if (auth.passwordResetRequired) {
+          // The recovery link can arrive while signup or forgot-password is
+          // pushed on top; drop those so the reset screen (the new home) is
+          // what the user actually sees.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            rootNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+          });
+          return const ResetPasswordScreen();
+        }
         if (!auth.isLoggedIn) return const LoginScreen();
-        return auth.isStaff
+        return auth.isCanteenStaff
             ? const StaffDashboardScreen()
             : const StudentHomeScreen();
       },
@@ -212,8 +229,10 @@ class SetupGuideScreen extends StatelessWidget {
                 ),
                 const _SetupStep(
                   number: '5',
-                  text: 'Restart the app. Then sign up one Staff account and '
-                      'Student accounts to test ordering.',
+                  text: 'Restart the app, then sign up Student or Teacher '
+                      'accounts to test ordering. For the management '
+                      'dashboard, add a profile in Supabase with '
+                      'role = "canteen_staff".',
                 ),
                 const SizedBox(height: 32),
               ],

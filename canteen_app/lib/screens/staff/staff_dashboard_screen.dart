@@ -4,10 +4,12 @@ import '../../providers/auth_provider.dart';
 import '../../providers/menu_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/order_provider.dart';
+import '../../providers/wallet_provider.dart';
 import '../../utils/constants.dart';
 import 'order_management_screen.dart';
 import 'menu_management_screen.dart';
 import 'analytics_screen.dart';
+import 'earnings_screen.dart';
 import '../shared/notifications_screen.dart';
 import '../auth/login_screen.dart';
 
@@ -64,6 +66,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
       const OrderManagementScreen(),
       if (canManageMenu) const MenuManagementScreen(),
       const AnalyticsScreen(),
+      const EarningsScreen(),
     ];
 
     return Scaffold(
@@ -121,9 +124,11 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
         onDestinationSelected: (index) {
           setState(() => _currentIndex = index);
           // Refresh data when switching tabs
-          if (index == 0) orderProvider.loadActiveOrders();
-          if (canManageMenu && index == 1) context.read<MenuProvider>().loadMenu();
-          if (index == screens.length - 1) orderProvider.loadAnalytics();
+          final screen = screens[index];
+          if (screen is OrderManagementScreen) orderProvider.loadActiveOrders();
+          if (screen is MenuManagementScreen) context.read<MenuProvider>().loadMenu();
+          if (screen is AnalyticsScreen) orderProvider.loadAnalytics();
+          if (screen is EarningsScreen) context.read<WalletProvider>().loadCanteen();
         },
         backgroundColor: Colors.white,
         indicatorColor: AppColors.primary.withValues(alpha: 0.1),
@@ -144,6 +149,10 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
           const NavigationDestination(
             icon: Icon(Icons.analytics),
             label: 'Analytics',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.account_balance_wallet),
+            label: 'Earnings',
           ),
         ],
       ),

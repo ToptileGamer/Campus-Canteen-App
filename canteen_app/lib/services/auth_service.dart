@@ -1,3 +1,4 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_config.dart';
 import '../models/user.dart';
 
@@ -96,6 +97,38 @@ class AuthService {
       rollNumber: row['roll_number'] ?? '',
       role: userRoleFromDb(row['role'] ?? 'student'),
     );
+  }
+
+  /// Emails the user a password-reset link. The link deep-links back into
+  /// the app through [AppConfig.authCallbackUrl], which Supabase turns into a
+  /// session and reports as an [AuthChangeEvent.passwordRecovery] event.
+  ///
+  /// Supabase accepts the request for unknown addresses too, so this never
+  /// reveals whether an account exists.
+  Future<void> sendPasswordReset(String email) async {
+    final supabase = AppConfig.supabase;
+    try {
+      await supabase.auth.resetPasswordForEmail(
+        email,
+        redirectTo: AppConfig.authCallbackUrl,
+      );
+    } on AuthException catch (e) {
+      throw Exception(e.message);
+    } catch (_) {
+      throw Exception('Could not send the reset email. Please try again.');
+    }
+  }
+
+  /// Sets a new password for the session created by the reset link.
+  Future<void> updatePassword(String newPassword) async {
+    final supabase = AppConfig.supabase;
+    try {
+      await supabase.auth.updateUser(UserAttributes(password: newPassword));
+    } on AuthException catch (e) {
+      throw Exception(e.message);
+    } catch (_) {
+      throw Exception('Could not update the password. Please try again.');
+    }
   }
 
   Future<void> logout() async {

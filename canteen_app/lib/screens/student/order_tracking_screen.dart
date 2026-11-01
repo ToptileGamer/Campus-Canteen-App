@@ -73,12 +73,12 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
         title: const Text('Order Tracking', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 0.5,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
-        ),
+        leading: Navigator.canPop(context)
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.of(context).maybePop(),
+              )
+            : null,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -126,6 +126,30 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                     const SizedBox(height: 8),
                     Text('Order #${order.displayNumber}',
                         style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+                    if (order.transactionId.startsWith('WALLET-')) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.account_balance_wallet,
+                                size: 16, color: AppColors.primary),
+                            SizedBox(width: 6),
+                            Text('Paid from Wallet',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary)),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -94,3 +94,4 @@ app.*.symbols
 # Local notes (feature backlog)
 changes.txt
 .env.example
+supabase/

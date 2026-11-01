@@ -5,10 +5,12 @@ import '../../providers/cart_provider.dart';
 import '../../providers/menu_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/order_provider.dart';
+import '../../providers/wallet_provider.dart';
 import '../../utils/constants.dart';
 import 'menu_browsing_screen.dart';
 import 'cart_screen.dart';
 import 'order_history_screen.dart';
+import 'wallet_screen.dart';
 import '../shared/notifications_screen.dart';
 import '../auth/login_screen.dart';
 
@@ -26,6 +28,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     MenuBrowsingScreen(),
     CartScreen(),
     OrderHistoryScreen(),
+    WalletScreen(),
   ];
 
   @override
@@ -38,11 +41,13 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       context.read<MenuProvider>().loadMenu();
       context.read<OrderProvider>().loadUserOrders(auth.user!.id);
       context.read<NotificationProvider>().load(auth.user!.id);
+      context.read<WalletProvider>().load(auth.user!.id);
 
       // Real-time sync: orders, menu and notifications without reloads.
       context.read<OrderProvider>().subscribe(auth.user!.id, isStaff: false);
       context.read<MenuProvider>().subscribeRealtime();
       context.read<NotificationProvider>().subscribe(auth.user!.id);
+      context.read<WalletProvider>().subscribe(auth.user!.id);
 
       // 5s fallback poll so order changes always reflect even if realtime drops.
       context.read<OrderProvider>().startPolling(auth.user!.id, isStaff: false);
@@ -55,6 +60,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     context.read<OrderProvider>().stopPolling();
     context.read<MenuProvider>().unsubscribeRealtime();
     context.read<NotificationProvider>().unsubscribe();
+    context.read<WalletProvider>().unsubscribe();
     super.dispose();
   }
 
@@ -117,6 +123,12 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               context.read<OrderProvider>().loadUserOrders(auth.user!.id);
             }
           }
+          if (index == 3) {
+            final auth = context.read<AuthProvider>();
+            if (auth.isLoggedIn) {
+              context.read<WalletProvider>().load(auth.user!.id, silent: true);
+            }
+          }
         },
         selectedItemColor: AppColors.primary,
         unselectedItemColor: AppColors.textSecondary,
@@ -131,6 +143,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
             label: 'Cart',
           ),
           const BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Orders'),
+          const BottomNavigationBarItem(
+              icon: Icon(Icons.account_balance_wallet_outlined), label: 'Wallet'),
         ],
       ),
     );

@@ -4,13 +4,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_config.dart';
 import '../models/order.dart';
 import '../models/time_slot.dart';
-import '../models/transaction.dart';
 import '../services/order_service.dart';
-import '../services/payment_service.dart';
 
 class OrderProvider extends ChangeNotifier {
   final OrderService _orderService = OrderService();
-  final PaymentService _paymentService = PaymentService();
 
   List<Order> _userOrders = [];
   List<Order> _activeOrders = [];
@@ -213,10 +210,25 @@ class OrderProvider extends ChangeNotifier {
     return slot?.currentOrders ?? 0;
   }
 
-  Future<Order?> placeOrder({
-    required String userId,
+  Future<bool> updateOrderStatus(String orderId, OrderStatus newStatus) async {
+    try {
+      final updated = await _orderService.updateOrderStatus(orderId, newStatus);
+      await loadActiveOrders();
+      _userOrders = _userOrders
+          .map((o) => o.id == updated.id ? updated : o)
+          .toList();
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Pays from the wallet and places the order. The server does both in one
+  /// transaction, so a short balance means no order is created.
+  Future<Order?> checkout({
     required List<OrderItem> items,
-    required String transactionId,
     required DateTime pickupStartTime,
     required DateTime pickupEndTime,
   }) async {
@@ -233,9 +245,7 @@ class OrderProvider extends ChangeNotifier {
       }
 
       final order = await _orderService.placeOrder(
-        userId: userId,
         items: items,
-        transactionId: transactionId,
         pickupStartTime: pickupStartTime,
         pickupEndTime: pickupEndTime,
       );
@@ -252,76 +262,18 @@ class OrderProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateOrderStatus(String orderId, OrderStatus newStatus) async {
-    try {
-      final updated = await _orderService.updateOrderStatus(orderId, newStatus);
-      await loadActiveOrders();
-      _userOrders = _userOrders
-          .map((o) => o.id == updated.id ? updated : o)
-          .toList();
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      notifyListeners();
-      return false;
-    }
-  }
-
-  // Simulate payment and order placement
-  Future<Order?> checkout({
-    required String userId,
-    required List<OrderItem> items,
-    required double amount,
-    required String paymentMethod,
-    required DateTime pickupStartTime,
-    required DateTime pickupEndTime,
-  }) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    // Step 1: Process payment (simulated — swap with a real gateway later)
-    final transaction = await _paymentService.processPayment(
-      userId: userId,
-      amount: amount,
-      paymentMethod: paymentMethod,
-    );
-
-    if (transaction.status == TransactionStatus.failed) {
-      _error = 'Payment failed. Please try again.';
-      _isLoading = false;
-      notifyListeners();
-      return null;
-    }
-
-    // Step 2: Place order only after successful payment
-    final order = await placeOrder(
-      userId: userId,
-      items: items,
-      transactionId: transaction.id,
-      pickupStartTime: pickupStartTime,
-      pickupEndTime: pickupEndTime,
-    );
-
-    _isLoading = false;
-    notifyListeners();
-    return order;
-  }
-
   String _friendlyError(Object e) {
-    final msg = e.toString();
-    if (msg.contains('full')) return 'This time slot is full. Please choose another.';
-    if (msg.contains('no longer available')) {
-      return msg.replaceAll('Exception: ', '').replaceAll('PostgrestException: ', '');
-    }
-    if (msg.contains('PostgrestException')) {
-      final cleaned = msg.replaceAll('PostgrestException: ', '');
-      final start = cleaned.indexOf('message: ');
+    final raw = e is PostgrestException
+        ? e.message
+        : e.toString().replaceFirst('Exception: ', '');
+    if (raw.contains('full')) return 'This time slot is full. Please choose another.';
+    if (raw.contains('PostgrestException')) {
+      final start = raw.indexOf('message: ');
       if (start != -1) {
-        return cleaned.substring(start + 9, cleaned.indexOf(',' , start));
+        return raw.substring(start + 9, raw.indexOf(',', start));
       }
     }
-    return msg.replaceFirst('Exception: ', '');
+    return raw;
   }
 
   void clearError() {

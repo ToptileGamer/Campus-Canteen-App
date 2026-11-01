@@ -141,8 +141,8 @@ class _SignupScreenState extends State<SignupScreen> {
                         SizedBox(
                           width: width,
                           child: _RoleChip(
-                            label: 'College Staff',
-                            icon: Icons.school_outlined,
+                            label: 'Teacher',
+                            icon: Icons.record_voice_over_outlined,
                             selected: _selectedRole == UserRole.collegeStaff,
                             onTap: () => setState(() => _selectedRole = UserRole.collegeStaff),
                           ),

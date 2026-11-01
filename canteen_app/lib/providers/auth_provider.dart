@@ -13,6 +13,7 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _awaitingEmailVerification = false;
+  bool _passwordResetRequired = false;
   StreamSubscription<AuthState>? _authSubscription;
 
   AuthProvider() {
@@ -21,12 +22,31 @@ class AuthProvider extends ChangeNotifier {
       // turns into a session. Watch for it so the app can move on by itself.
       _authSubscription = AppConfig.supabase.auth.onAuthStateChange.listen(
         (state) {
+          if (state.event == AuthChangeEvent.passwordRecovery) {
+            _passwordResetRequired = true;
+            _awaitingEmailVerification = false;
+            _user = null;
+            _error = null;
+            notifyListeners();
+            return;
+          }
           if (state.event != AuthChangeEvent.signedIn) return;
           if (!_awaitingEmailVerification) return;
           unawaited(_completeEmailVerification());
         },
-        onError: (Object _) {},
+        onError: handleAuthStreamError,
       );
+    }
+  }
+
+  /// Handles failures forwarded from the auth stream, e.g. the deep-link code
+  /// exchange rejecting an expired or already-used email link.
+  @visibleForTesting
+  void handleAuthStreamError(Object error) {
+    if (error is AuthException && error.message.contains('Email link')) {
+      _error = 'This link has expired or is no longer valid. '
+          'Please request a new one.';
+      notifyListeners();
     }
   }
 
@@ -40,13 +60,70 @@ class AuthProvider extends ChangeNotifier {
   AppUser? get user => _user;
   bool get isLoading => _isLoading;
   bool get isLoggedIn => _user != null;
-  bool get isStaff => _user?.isStaffRole ?? false;
+  /// Only canteen staff reach the management dashboard; students and
+  /// teachers both use the ordering app.
+  bool get isCanteenStaff => _user?.role == UserRole.canteenStaff;
   bool get canManageMenu => _user?.canManageMenu ?? false;
   String? get error => _error;
 
   /// True after a sign-up that requires the user to click the emailed
   /// confirmation link before a session exists.
   bool get awaitingEmailVerification => _awaitingEmailVerification;
+
+  /// True when the recovery deep link has established a session and the user
+  /// still has to pick a new password ([ResetPasswordScreen] is shown).
+  bool get passwordResetRequired => _passwordResetRequired;
+
+  /// Asks Supabase to email a reset link. Returns true when the request went
+  /// through; Supabase answers the same way for unknown addresses, so the
+  /// caller should show the "check your email" view either way.
+  Future<bool> sendPasswordReset(String email) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      await _authService.sendPasswordReset(email);
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Sets the new password on the recovery session, then loads the profile so
+  /// AuthGate drops the reset screen and lands on the normal home screen.
+  Future<bool> resetPassword(String password) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      await _authService.updatePassword(password);
+      _user = await _authService.loadProfileFromSession();
+      _passwordResetRequired = false;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = e.toString().replaceFirst('Exception: ', '');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Leaves the reset flow (back button) by ending the recovery session, so
+  /// the login screen starts from a clean state.
+  Future<void> dismissPasswordReset() async {
+    _passwordResetRequired = false;
+    _error = null;
+    await logout();
+  }
 
   Future<bool> login(String email, String password) async {
     _isLoading = true;
@@ -129,6 +206,7 @@ class AuthProvider extends ChangeNotifier {
     await _authService.logout();
     _user = null;
     _awaitingEmailVerification = false;
+    _passwordResetRequired = false;
     notifyListeners();
   }
 

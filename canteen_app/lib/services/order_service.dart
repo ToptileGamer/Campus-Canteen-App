@@ -37,7 +37,7 @@ class OrderService {
           'preparing',
           'readyForPickup',
         ])
-        .order('pickup_start');
+        .order('pickup_start_time');
     return rows.map(_fromRow).toList();
   }
 
@@ -145,17 +145,17 @@ class OrderService {
   static String _slotKey(DateTime start, DateTime end) =>
       '${start.millisecondsSinceEpoch}-${end.millisecondsSinceEpoch}';
 
+  /// Places an order paid from the user's wallet. The server debits the
+  /// wallet and creates the order in one transaction — if the balance is
+  /// short, nothing is created and the RPC raises a friendly error.
   Future<Order> placeOrder({
-    required String userId,
     required List<OrderItem> items,
-    required String transactionId,
     required DateTime pickupStartTime,
     required DateTime pickupEndTime,
   }) async {
     final supabase = AppConfig.supabase;
-    final result = await supabase.rpc('place_order', params: {
+    final result = await supabase.rpc('place_order_from_wallet', params: {
       'p_items': items.map((i) => i.toJson()).toList(),
-      'p_transaction_id': transactionId,
       'p_pickup_start': pickupStartTime.toIso8601String(),
       'p_pickup_end': pickupEndTime.toIso8601String(),
     });

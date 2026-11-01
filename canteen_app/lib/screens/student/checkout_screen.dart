@@ -6,9 +6,11 @@ import '../../models/time_slot.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/order_provider.dart';
+import '../../providers/wallet_provider.dart';
 import '../../utils/constants.dart';
 import '../../widgets/time_slot_picker.dart';
 import 'order_tracking_screen.dart';
+import 'wallet_screen.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key});
@@ -19,7 +21,6 @@ class CheckoutScreen extends StatefulWidget {
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
   TimeSlot? _selectedSlot;
-  String _paymentMethod = 'UPI';
   bool _agreedToTerms = false;
   DateTime _selectedDate = DateTime.now();
 
@@ -27,7 +28,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthProvider>();
       context.read<OrderProvider>().loadTimeSlots(date: _selectedDate);
+      final wallet = context.read<WalletProvider>();
+      if (!wallet.hasLoaded && auth.isLoggedIn) {
+        wallet.load(auth.user!.id, silent: true);
+      }
     });
   }
 
@@ -56,7 +62,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
-    final auth = context.read<AuthProvider>();
     final cart = context.read<CartProvider>();
     final orderProvider = context.read<OrderProvider>();
 
@@ -64,21 +69,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final orderItems = cart.items.map((ci) => ci.menuItem.toOrderItem(ci.quantity)).toList();
 
     final order = await orderProvider.checkout(
-      userId: auth.user!.id,
       items: orderItems,
-      amount: cart.totalAmount,
-      paymentMethod: _paymentMethod,
       pickupStartTime: _selectedSlot!.startTime,
       pickupEndTime: _selectedSlot!.endTime,
     );
 
     if (order != null && mounted) {
       cart.clearCart();
-      Navigator.of(context).pushAndRemoveUntil(
+      Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => OrderTrackingScreen(orderId: order.id),
         ),
-        (route) => false,
       );
     }
   }
@@ -88,6 +89,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final cart = context.watch<CartProvider>();
     final orderProvider = context.watch<OrderProvider>();
     final auth = context.watch<AuthProvider>();
+    final wallet = context.watch<WalletProvider>();
+    final canPay = wallet.hasLoaded && wallet.balance >= cart.totalAmount;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -237,23 +240,71 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
             const SizedBox(height: 16),
 
-            // Payment method
-            const Text('Payment Method',
+            // Payment: wallet only
+            const Text('Payment',
                 style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
             const SizedBox(height: 8),
-            _PaymentMethodCard(
-              icon: Icons.phone_android,
-              label: 'UPI (Google Pay / PhonePe / Paytm)',
-              selected: _paymentMethod == 'UPI',
-              onTap: () => setState(() => _paymentMethod = 'UPI'),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary, width: 2),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.account_balance_wallet,
+                      color: AppColors.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Pay from Wallet',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                        Text(
+                          wallet.hasLoaded
+                              ? 'Balance ₹${wallet.balance.toStringAsFixed(2)}'
+                              : 'Loading balance…',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: wallet.hasLoaded &&
+                                    wallet.balance < cart.totalAmount
+                                ? AppColors.error
+                                : AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (wallet.hasLoaded &&
+                      wallet.balance >= cart.totalAmount)
+                    const Icon(Icons.check_circle, color: AppColors.primary),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            _PaymentMethodCard(
-              icon: Icons.credit_card,
-              label: 'Card (Debit / Credit)',
-              selected: _paymentMethod == 'Card',
-              onTap: () => setState(() => _paymentMethod = 'Card'),
-            ),
+            if (wallet.hasLoaded && wallet.balance < cart.totalAmount) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Not enough balance for ₹${cart.totalAmount.toStringAsFixed(2)}.',
+                      style: const TextStyle(
+                          color: AppColors.error, fontSize: 13),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const WalletPage()),
+                      );
+                    },
+                    child: const Text('Add Money'),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 16),
 
             // Terms
@@ -273,17 +324,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               width: double.infinity,
               height: 56,
               child: ElevatedButton.icon(
-                onPressed: (orderProvider.isLoading || _selectedSlot == null) ? null : _placeOrder,
+                onPressed: (orderProvider.isLoading ||
+                        _selectedSlot == null ||
+                        !canPay)
+                    ? null
+                    : _placeOrder,
                 icon: orderProvider.isLoading
                     ? const SizedBox(
                         width: 20, height: 20,
                         child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                       )
-                    : const Icon(Icons.payment),
+                    : const Icon(Icons.account_balance_wallet),
                 label: Text(
                   orderProvider.isLoading
-                      ? 'Processing Payment...'
-                      : 'Pay ₹${cart.totalAmount.toStringAsFixed(2)}',
+                      ? 'Paying from Wallet…'
+                      : 'Pay ₹${cart.totalAmount.toStringAsFixed(2)} from Wallet',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 style: ElevatedButton.styleFrom(
@@ -368,46 +423,6 @@ class _DateOptionChip extends StatelessWidget {
               ),
             ),
             if (selected) const Icon(Icons.check_circle, color: AppColors.primary, size: 18),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PaymentMethodCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _PaymentMethodCard({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary.withValues(alpha: 0.08) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? AppColors.primary : Colors.grey.shade300,
-            width: selected ? 2 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: selected ? AppColors.primary : AppColors.textSecondary),
-            const SizedBox(width: 12),
-            Expanded(child: Text(label, style: TextStyle(fontWeight: selected ? FontWeight.w600 : FontWeight.normal))),
-            if (selected) const Icon(Icons.check_circle, color: AppColors.primary),
           ],
         ),
       ),

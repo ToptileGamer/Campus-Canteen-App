@@ -30,7 +30,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     }
 
     Widget destination;
-    if (auth.isStaff) {
+    if (auth.isCanteenStaff) {
       destination = const StaffDashboardScreen();
     } else {
       destination = const StudentHomeScreen();

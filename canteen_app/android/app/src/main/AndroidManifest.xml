@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required for Supabase network calls in release builds.
+         The debug/profile manifests also declare this, but release APKs
+         need it in main or every socket connect fails with errno 1. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <!-- For local notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
